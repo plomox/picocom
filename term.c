@@ -1339,7 +1339,7 @@ term_set(int fd,
 /***************************************************************************/
 
 int
-term_pulse_dtr (int fd)
+term_pulse_dtr (int fd, int dtr_up)
 {
     int rval, r, i;
 
@@ -1359,7 +1359,10 @@ term_pulse_dtr (int fd)
 
             r = ioctl(fd, TIOCMBIC, &opins);
             if ( r < 0 ) {
-                term_errno = TERM_EDTRDOWN;
+                if (dtr_up == 1)
+                    term_errno = TERM_EDTRDOWN;
+                else
+                    term_errno = TERM_EDTRUP;
                 rval = -1;
                 break;
             }
@@ -1368,7 +1371,10 @@ term_pulse_dtr (int fd)
 
             r = ioctl(fd, TIOCMBIS, &opins);
             if ( r < 0 ) {
-                term_errno = TERM_EDTRUP;
+                if (dtr_up == 1)
+                    term_errno = TERM_EDTRUP;
+                else
+                    term_errno = TERM_EDTRDOWN;
                 rval = -1;
                 break;
             }
@@ -1514,6 +1520,78 @@ term_lower_dtr(int fd)
 /***************************************************************************/
 
 int
+term_get_dtr(int fd)
+{
+    int mctl, rval = -1;
+
+    mctl = term_get_mctl(fd);
+    if (mctl >= 0 && mctl != MCTL_UNAVAIL) {
+        rval = ((mctl & MCTL_DTR) ? 1 : 0);
+    }
+    return rval;
+}
+
+/***************************************************************************/
+
+int
+term_pulse_rts (int fd, int rts_up)
+{
+    int rval, r, i;
+
+    rval = 0;
+
+    do { /* dummy */
+
+        i = term_find(fd);
+        if ( i < 0 ) {
+            rval = -1;
+            break;
+        }
+
+#if defined(__linux__) || defined(__APPLE__)
+        {
+            int opins = TIOCM_RTS;
+
+            r = ioctl(fd, TIOCMBIC, &opins);
+            if ( r < 0 ) {
+                if (rts_up == 1)
+                    term_errno = TERM_ERTSDOWN;
+                else
+                    term_errno = TERM_ERTSUP;
+                rval = -1;
+                break;
+            }
+
+            sleep(1);
+
+            r = ioctl(fd, TIOCMBIS, &opins);
+            if ( r < 0 ) {
+                if (rts_up == 1)
+                    term_errno = TERM_ERTSUP;
+                else
+                    term_errno = TERM_ERTSDOWN;
+                rval = -1;
+                break;
+            }
+        }
+#else
+        {
+            term_errno = TERM_ERTSUP;
+            sleep(1);
+            term_errno = TERM_ERTSDOWN;
+            rval = -1;
+            break;
+        }
+#endif /* of __linux__ or __APPLE__ */
+
+    } while (0);
+
+    return rval;
+}
+
+/***************************************************************************/
+
+int
 term_raise_rts(int fd)
 {
     int rval, i;
@@ -1587,6 +1665,20 @@ term_lower_rts(int fd)
     return rval;
 }
 
+
+/***************************************************************************/
+
+int
+term_get_rts(int fd)
+{
+    int mctl, rval = -1;
+
+    mctl = term_get_mctl(fd);
+    if (mctl >= 0 && mctl != MCTL_UNAVAIL) {
+        rval = ((mctl & MCTL_RTS) ? 1 : 0);
+    }
+    return rval;
+}
 
 /***************************************************************************/
 

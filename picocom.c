@@ -85,6 +85,7 @@ const char *flow_str[] = {
 #define KEY_QUIT    CKEY('q') /* exit picocom without reseting port */
 #define KEY_PULSE   CKEY('p') /* pulse DTR */
 #define KEY_TOG_DTR CKEY('t') /* toggle DTR */
+#define KEY_PUL_RTS CKEY('o') /* pulse RTS */
 #define KEY_TOG_RTS CKEY('g') /* toggle RTS */
 #define KEY_BAUD    CKEY('b') /* set baudrate */
 #define KEY_BAUD_UP CKEY('u') /* increase baudrate (up) */
@@ -191,8 +192,8 @@ struct {
     int omap;
     int emap;
     char *log_filename;
-    int lower_rts;
-    int lower_dtr;
+    int toggle_rts;
+    int toggle_dtr;
 } opts = {
     .port = NULL,
     .baud = 9600,
@@ -213,8 +214,8 @@ struct {
     .omap = M_O_DFL,
     .emap = M_E_DFL,
     .log_filename = NULL,
-    .lower_rts = 0,
-    .lower_dtr = 0
+    .toggle_rts = -1,
+    .toggle_dtr = -1,
 };
 
 int sig_exit = 0;
@@ -785,6 +786,8 @@ show_keys()
               KEYC(KEY_PULSE));
     fd_printf(STO, "*** [C-%c] : Toggle DTR\r\n",
               KEYC(KEY_TOG_DTR));
+    fd_printf(STO, "*** [C-%c] : Pulse RTS\r\n",
+              KEYC(KEY_PUL_RTS));
     fd_printf(STO, "*** [C-%c] : Toggle RTS\r\n",
               KEYC(KEY_TOG_RTS));
     fd_printf(STO, "*** [C-%c] : Send break\r\n",
@@ -922,8 +925,9 @@ run_cmd(int fd, const char *cmd, const char *args_extra)
 int
 do_command (unsigned char c)
 {
-    static int dtr_up = 0;
-    static int rts_up = 0;
+    int dtr_up = term_get_dtr(tty_fd);
+    int rts_up = term_get_rts(tty_fd);
+
     int newbaud, newflow, newparity, newbits, newstopbits;
     const char *xfr_cmd;
     char *fname;
@@ -946,8 +950,13 @@ do_command (unsigned char c)
         show_keys();
         break;
     case KEY_PULSE:
-        fd_printf(STO, "\r\n*** pulse DTR ***\r\n");
-        if ( term_pulse_dtr(tty_fd) < 0 )
+        fd_printf(STO, "\r\n*** pulse DTR ");
+        if (dtr_up == 1)
+            fd_printf(STO,"(down up)");
+        else
+            fd_printf(STO,"(up down)");
+        fd_printf(STO," ***\r\n");
+        if ( term_pulse_dtr(tty_fd, dtr_up) < 0 )
             fd_printf(STO, "*** FAILED\r\n");
         break;
     case KEY_TOG_DTR:
@@ -958,6 +967,16 @@ do_command (unsigned char c)
         if ( r >= 0 ) dtr_up = ! dtr_up;
         fd_printf(STO, "\r\n*** DTR: %s ***\r\n",
                   dtr_up ? "up" : "down");
+        break;
+    case KEY_PUL_RTS:
+        fd_printf(STO, "\r\n*** pulse RTS ");
+        if (rts_up == 1)
+            fd_printf(STO,"(down up)");
+        else
+            fd_printf(STO,"(up down)");
+        fd_printf(STO," ***\r\n");
+        if ( term_pulse_rts(tty_fd, rts_up) < 0 )
+            fd_printf(STO, "*** FAILED\r\n");
         break;
     case KEY_TOG_RTS:
         if ( rts_up )
@@ -1310,8 +1329,8 @@ show_usage(char *name)
     printf("  --omap <map> (output mappings)\n");
     printf("  --emap <map> (local-echo mappings)\n");
     printf("  --lo<g>file <filename>\n");
-    printf("  --lower-rts\n");
-    printf("  --lower-dtr\n");
+    printf("  --rts 0 | 1\n");
+    printf("  --dtr 0 | 1\n");
     printf("  --<h>elp\n");
     printf("<map> is a comma-separated list of one or more of:\n");
     printf("  crlf : map CR --> LF\n");
@@ -1354,8 +1373,8 @@ parse_args(int argc, char *argv[])
         {"databits", required_argument, 0, 'd'},
         {"stopbits", required_argument, 0, 'p'},
         {"logfile", required_argument, 0, 'g'},
-        {"lower-rts", no_argument, 0, 'R'},
-        {"lower-dtr", no_argument, 0, 'D'},
+        {"rts", required_argument, 0, 'R'},
+        {"dtr", required_argument, 0, 'D'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -1498,10 +1517,32 @@ parse_args(int argc, char *argv[])
             opts.log_filename = strdup(optarg);
             break;
         case 'R':
-            opts.lower_rts = 1;
+            switch (optarg[0]) {
+            case '0':
+                opts.toggle_rts = 0;
+                break;
+            case '1':
+                opts.toggle_rts = 1;
+                break;
+            default:
+                fprintf(stderr, "Invalid --rts: %c\n", optarg[0]);
+                r = -1;
+                break;
+            }
             break;
         case 'D':
-            opts.lower_dtr = 1;
+            switch (optarg[0]) {
+            case '0':
+                opts.toggle_dtr = 0;
+                break;
+            case '1':
+                opts.toggle_dtr = 1;
+                break;
+            default:
+                fprintf(stderr, "Invalid --dtr: %c\n", optarg[0]);
+                r = -1;
+                break;
+            }
             break;
         case 'h':
             show_usage(argv[0]);
@@ -1622,17 +1663,6 @@ main(int argc, char *argv[])
         fatal("failed to add device %s: %s",
               opts.port, term_strerror(term_errno, errno));
 
-    if ( opts.lower_rts ) {
-        r = term_lower_rts(tty_fd);
-        if ( r < 0 )
-            fatal("failed to lower RTS of device %s: %s", opts.port, term_strerror(term_errno, errno));
-    }
-    if ( opts.lower_dtr ) {
-        r = term_lower_dtr(tty_fd);
-        if ( r < 0 )
-            fatal("failed to lower DTR of device %s: %s", opts.port, term_strerror(term_errno, errno));
-    }
-
     r = term_apply(tty_fd, 0);
     if ( r < 0 )
         fatal("failed to config device %s: %s",
@@ -1649,6 +1679,27 @@ main(int argc, char *argv[])
     if ( r < 0 )
         fatal("failed to set I/O device to raw mode: %s",
               term_strerror(term_errno, errno));
+
+    if ( opts.toggle_rts  == 0) {
+        r = term_lower_rts(tty_fd);
+        if ( r < 0 )
+            fatal("failed to lower RTS of device %s: %s", opts.port, term_strerror(term_errno, errno));
+    }
+    else if ( opts.toggle_rts  == 1) {
+        r = term_raise_rts(tty_fd);
+        if ( r < 0 )
+            fatal("failed to lower RTS of device %s: %s", opts.port, term_strerror(term_errno, errno));
+    }
+    if ( opts.toggle_dtr == 0) {
+        r = term_lower_dtr(tty_fd);
+        if ( r < 0 )
+            fatal("failed to lower DTR of device %s: %s", opts.port, term_strerror(term_errno, errno));
+    }
+    else if ( opts.toggle_dtr == 1) {
+        r = term_raise_dtr(tty_fd);
+        if ( r < 0 )
+            fatal("failed to lower DTR of device %s: %s", opts.port, term_strerror(term_errno, errno));
+    }
 
 #ifdef LINENOISE
     init_history();

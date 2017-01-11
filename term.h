@@ -57,9 +57,10 @@
  * F term_get_parity - return the parity setting in "currtermios"
  * F term_get_databits - return the data-bits setting in "currtermios"
  * F term_get_flowcntrl - return the flow-control setting in "currtermios"
- * F term_pulse_dtr - pulse the DTR line a device
+ * F term_pulse_dtr - pulse the DTR line of a device
  * F term_lower_dtr - lower the DTR line of a device
  * F term_raise_dtr - raise the DTR line of a device
+ * F term_pulse_rts - pulse the RTS line of a device
  * F term_lower_rts - lower the RTS line of a device
  * F term_raise_rts - raise the RTS line of a device
  * F term_get_mctl - Get modem control signals status
@@ -584,12 +585,12 @@ enum flowcntrl_e term_get_flowcntrl (int fd);
 /* F term_pulse_dtr
  *
  * Pulses the DTR line of the device associated with the managed
- * filedes "fd". The DTR line is lowered for 1sec and then raised
- * again.
+ * filedes "fd". The DTR line is toggled for 1sec and then set to
+ * its previous value again.
  *
  * Returns negative on failure, non negative on success.
  */
-int term_pulse_dtr (int fd);
+int term_pulse_dtr (int fd, int dtr_up);
 
 /* F term_lower_dtr
  *
@@ -609,6 +610,25 @@ int term_lower_dtr (int fd);
  */
 int term_raise_dtr (int fd);
 
+/* F term_get_dtr
+ *
+ * Gets the state of the DTR line of the device associated with the managed
+ * filedes "fd".
+ *
+ * Returns negative on failure, non negative on success.
+ */
+int term_get_dtr (int fd);
+
+/* F term_pulse_rts
+ *
+ * Pulses the RTS line of the device associated with the managed
+ * filedes "fd". The RTS line is toggled for 1sec and then set to
+ * its previous value again.
+ *
+ * Returns negative on failure, non negative on success.
+ */
+int term_pulse_rts (int fd, int rts_up);
+
 /* F term_lower_rts
  *
  * Lowers the RTS line of the device associated with the managed
@@ -627,6 +647,15 @@ int term_lower_rts (int fd);
  */
 int term_raise_rts (int fd);
 
+/* F term_get_rts
+ *
+ * Gets the state of the RTS line of the device associated with the managed
+ * filedes "fd".
+ *
+ * Returns negative on failure, non negative on success.
+ */
+int term_get_rts (int fd);
+
 /* F term_get_mctl
  *
  * Get the status of the modem control lines of the serial port
@@ -636,6 +665,7 @@ int term_raise_rts (int fd);
  * not available returns MCTL_UNAVAIL. Otherwise returns a word that
  * can be checked against the MCTL_* flags.
  */
+
 int term_get_mctl (int fd);
 
 /* F term_drain
